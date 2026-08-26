@@ -1,0 +1,48 @@
+const { processDailyROI, getToday } = require("./roiEngine");
+
+let lastRunDate = null;
+
+async function runROI() {
+    const today = getToday();
+
+    if (lastRunDate === today) {
+        return;
+    }
+
+    try {
+        console.log("ROI SCHEDULER CHECK:", today);
+
+        await processDailyROI();
+
+        lastRunDate = today;
+
+        console.log(
+            "ROI DAILY RUN COMPLETE:",
+            today
+        );
+
+    } catch (error) {
+        console.error(
+            "ROI SCHEDULER ERROR:",
+            error
+        );
+    }
+}
+
+function startROIScheduler() {
+    runROI();
+
+    setInterval(
+        runROI,
+        60 * 1000
+    );
+
+    console.log(
+        "ROI SCHEDULER STARTED"
+    );
+}
+
+module.exports = {
+    startROIScheduler,
+    runROI
+};

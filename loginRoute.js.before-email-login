@@ -1,0 +1,117 @@
+const bcrypt = require("bcryptjs");
+const jwt = require("jsonwebtoken");
+const User = require("./models/User");
+
+async function loginUser(req, res) {
+    try {
+        const {
+            mobile,
+            password
+        } = req.body;
+
+        const cleanMobile =
+            String(mobile || "").trim();
+
+        if (!/^[0-9]{10}$/.test(cleanMobile)) {
+            return res.status(400).json({
+                success: false,
+                message: "Enter a valid 10 digit mobile number."
+            });
+        }
+
+        if (
+            typeof password !== "string" ||
+            password.length === 0
+        ) {
+            return res.status(400).json({
+                success: false,
+                message: "Password is required."
+            });
+        }
+
+        const user =
+            await User.findOne({
+                mobile: cleanMobile
+            }).select("+password");
+
+        if (!user) {
+            return res.status(401).json({
+                success: false,
+                message: "Invalid mobile number or password."
+            });
+        }
+
+        if (user.status === "SUSPENDED") {
+            return res.status(403).json({
+                success: false,
+                message: "Your account is suspended."
+            });
+        }
+
+        const passwordValid =
+            await bcrypt.compare(
+                password,
+                user.password
+            );
+
+        if (!passwordValid) {
+            return res.status(401).json({
+                success: false,
+                message: "Invalid mobile number or password."
+            });
+        }
+
+        const jwtSecret =
+            process.env.JWT_SECRET;
+
+        if (!jwtSecret) {
+            console.error(
+                "JWT_SECRET is not configured."
+            );
+
+            return res.status(500).json({
+                success: false,
+                message: "Authentication service is not configured."
+            });
+        }
+
+        const token =
+            jwt.sign(
+                {
+                    userId: user.userId,
+                    role: user.role
+                },
+                jwtSecret,
+                {
+                    expiresIn: "7d"
+                }
+            );
+
+        return res.json({
+            success: true,
+            message: "Login successful.",
+            token,
+            user: {
+                userId: user.userId,
+                name: user.name,
+                mobile: user.mobile,
+                sponsorId: user.sponsorId,
+                status: user.status
+            }
+        });
+
+    } catch (error) {
+
+        console.error(
+            "LOGIN ERROR:",
+            error
+        );
+
+        return res.status(500).json({
+            success: false,
+            message: "Login failed."
+        });
+    }
+}
+
+module.exports = loginUser;

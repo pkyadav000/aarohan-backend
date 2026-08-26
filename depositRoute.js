@@ -1,0 +1,105 @@
+const { isAllowedPackage } = require("./packageConfig");
+const Deposit = require("./models/Deposit");
+const User = require("./models/User");
+
+async function createDeposit(req, res) {
+    try {
+        const { amount, paymentReference = "" } = req.body;
+
+        const numericAmount = Number(amount);
+
+        if (!Number.isFinite(numericAmount) || numericAmount <= 0) {
+            return res.status(400).json({
+                success: false,
+                message: "Enter a valid deposit amount."
+            });
+        }
+
+        if (!isAllowedPackage(numericAmount)) {
+            return res.status(400).json({
+                success: false,
+                message: "Invalid package amount. Allowed packages are ₹999, ₹1,999, ₹4,999 and ₹9,999."
+            });
+        }
+
+        if (numericAmount > 10000000) {
+            return res.status(400).json({
+                success: false,
+                message: "Deposit amount is too large."
+            });
+        }
+
+        const user = await User.findOne({
+            userId: req.auth.userId
+        }).select("userId status");
+
+        if (!user) {
+            return res.status(404).json({
+                success: false,
+                message: "User not found."
+            });
+        }
+
+        if (user.status === "SUSPENDED") {
+            return res.status(403).json({
+                success: false,
+                message: "Your account is suspended."
+            });
+        }
+
+        const lastDeposit = await Deposit.findOne({
+            depositId: /^DEP[0-9]+$/
+        })
+            .sort({ depositId: -1 })
+            .select("depositId");
+
+        let nextNumber = 1001;
+
+        if (
+            lastDeposit &&
+            /^DEP[0-9]+$/.test(lastDeposit.depositId)
+        ) {
+            nextNumber =
+                Number(lastDeposit.depositId.substring(3)) + 1;
+        }
+
+        const depositId = "DEP" + nextNumber;
+
+        const deposit = await Deposit.create({
+            depositId,
+            userId: user.userId,
+            amount: numericAmount,
+            paymentReference:
+                String(paymentReference).trim(),
+            status: "PENDING"
+        });
+
+        return res.status(201).json({
+            success: true,
+            message: "Deposit submitted for admin approval.",
+            deposit: {
+                depositId: deposit.depositId,
+                userId: deposit.userId,
+                amount: deposit.amount,
+                status: deposit.status
+            }
+        });
+
+    } catch (error) {
+        console.error("DEPOSIT ERROR:", error);
+
+        if (error && error.code === 11000) {
+            return res.status(409).json({
+                success: false,
+                message: "Unable to create unique deposit ID."
+            });
+        }
+
+        return res.status(500).json({
+            success: false,
+            message: "Deposit submission failed."
+        });
+    }
+}
+
+module.exports = createDeposit;

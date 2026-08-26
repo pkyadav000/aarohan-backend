@@ -1,0 +1,159 @@
+const mongoose = require("mongoose");
+const Deposit = require("./models/Deposit");
+const User = require("./models/User");
+
+async function approveDeposit(req, res) {
+    const session = await mongoose.startSession();
+
+    try {
+        const { depositId } = req.params;
+
+        if (!depositId) {
+            return res.status(400).json({
+                success: false,
+                message: "Deposit ID is required."
+            });
+        }
+
+        session.startTransaction();
+
+        const deposit = await Deposit.findOne({
+            depositId
+        }).session(session);
+
+        if (!deposit) {
+            await session.abortTransaction();
+
+            return res.status(404).json({
+                success: false,
+                message: "Deposit not found."
+            });
+        }
+
+        if (deposit.status !== "PENDING") {
+            await session.abortTransaction();
+
+            return res.status(409).json({
+                success: false,
+                message:
+                    `Deposit is already ${deposit.status.toLowerCase()}.`
+            });
+        }
+
+        const user = await User.findOne({
+            userId: deposit.userId
+        }).session(session);
+
+        if (!user) {
+            await session.abortTransaction();
+
+            return res.status(404).json({
+                success: false,
+                message: "User not found."
+            });
+        }
+
+        if (user.status === "SUSPENDED") {
+            await session.abortTransaction();
+
+            return res.status(403).json({
+                success: false,
+                message: "User account is suspended."
+            });
+        }
+
+        const updatedDeposit =
+            await Deposit.findOneAndUpdate(
+                {
+                    _id: deposit._id,
+                    status: "PENDING"
+                },
+                {
+                    $set: {
+                        status: "APPROVED",
+                        approvedBy: req.auth.userId,
+                        approvedAt: new Date()
+                    }
+                },
+                {
+                    new: true,
+                    session
+                }
+            );
+
+        if (!updatedDeposit) {
+            await session.abortTransaction();
+
+            return res.status(409).json({
+                success: false,
+                message:
+                    "Deposit was already processed."
+            });
+        }
+
+        const updatedUser =
+            await User.findOneAndUpdate(
+                {
+                    _id: user._id
+                },
+                {
+                    $inc: {
+                        walletBal: deposit.amount
+                    }
+                },
+                {
+                    new: true,
+                    session
+                }
+            );
+
+        if (!updatedUser) {
+            throw new Error(
+                "Wallet update failed."
+            );
+        }
+
+        await session.commitTransaction();
+
+        return res.json({
+            success: true,
+            message: "Deposit approved and wallet credited.",
+            deposit: {
+                depositId:
+                    updatedDeposit.depositId,
+                status:
+                    updatedDeposit.status,
+                amount:
+                    updatedDeposit.amount,
+                approvedBy:
+                    updatedDeposit.approvedBy,
+                approvedAt:
+                    updatedDeposit.approvedAt
+            },
+            walletBalance:
+                updatedUser.walletBal
+        });
+
+    } catch (error) {
+
+        try {
+            await session.abortTransaction();
+        } catch (_) {}
+
+        console.error(
+            "APPROVE DEPOSIT ERROR:",
+            error
+        );
+
+        return res.status(500).json({
+            success: false,
+            message:
+                "Deposit approval failed."
+        });
+
+    } finally {
+        await session.endSession();
+    }
+}
+
+module.exports = approveDeposit;

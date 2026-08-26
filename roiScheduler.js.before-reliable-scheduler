@@ -1,0 +1,138 @@
+const { processDailyROI, getToday } = require("./roiEngine");
+
+let running = false;
+let midnightTimer = null;
+
+async function runROI() {
+    if (running) {
+        console.log(
+            "ROI SCHEDULER: previous run still active."
+        );
+        return;
+    }
+
+    running = true;
+
+    try {
+        const today = getToday();
+
+        console.log(
+            "ROI SCHEDULER CHECK:",
+            today
+        );
+
+        await processDailyROI();
+
+        console.log(
+            "ROI DAILY RUN COMPLETE:",
+            today
+        );
+
+    } catch (error) {
+        console.error(
+            "ROI SCHEDULER ERROR:",
+            error
+        );
+
+    } finally {
+        running = false;
+    }
+}
+
+function getNextIndiaMidnight() {
+    const parts =
+        new Intl.DateTimeFormat(
+            "en-CA",
+            {
+                timeZone: "Asia/Kolkata",
+                year: "numeric",
+                month: "2-digit",
+                day: "2-digit"
+            }
+        ).formatToParts(new Date());
+
+    const data = {};
+
+    parts.forEach(function(part) {
+        if (part.type !== "literal") {
+            data[part.type] = part.value;
+        }
+    });
+
+    const today =
+        data.year +
+        "-" +
+        data.month +
+        "-" +
+        data.day;
+
+    const currentDate =
+        new Date(today + "T00:00:00Z");
+
+    currentDate.setUTCDate(
+        currentDate.getUTCDate() + 1
+    );
+
+    const nextDate =
+        currentDate.getUTCFullYear() +
+        "-" +
+        String(
+            currentDate.getUTCMonth() + 1
+        ).padStart(2, "0") +
+        "-" +
+        String(
+            currentDate.getUTCDate()
+        ).padStart(2, "0");
+
+    // India midnight = 00:00 IST = previous day 18:30 UTC
+    return new Date(
+        nextDate + "T00:00:00+05:30"
+    );
+}
+
+function scheduleNextMidnight() {
+    if (midnightTimer) {
+        clearTimeout(midnightTimer);
+    }
+
+    const nextMidnight =
+        getNextIndiaMidnight();
+
+    const delay =
+        Math.max(
+            1000,
+            nextMidnight.getTime() -
+            Date.now()
+        );
+
+    console.log(
+        "ROI NEXT MIDNIGHT:",
+        nextMidnight.toString()
+    );
+
+    midnightTimer =
+        setTimeout(
+            async function() {
+                await runROI();
+                scheduleNextMidnight();
+            },
+            delay
+        );
+}
+
+function startROIScheduler() {
+    console.log(
+        "ROI SCHEDULER STARTED"
+    );
+
+    // Startup recovery/check
+    runROI();
+
+    // Next automatic run at India midnight
+    scheduleNextMidnight();
+}
+
+module.exports = {
+    startROIScheduler,
+    runROI
+};

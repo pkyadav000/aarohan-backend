@@ -1,0 +1,92 @@
+const bcrypt = require("bcryptjs");
+const User = require("./models/User");
+
+async function registerUser(req, res) {
+    try {
+        const {
+            name,
+            email,
+            password,
+            sponsorId = ""
+        } = req.body;
+
+        if (!name || !email || !password) {
+            return res.status(400).json({
+                success: false,
+                message: "Name, email and password are required"
+            });
+        }
+
+        if (password.length < 6) {
+            return res.status(400).json({
+                success: false,
+                message: "Password must be at least 6 characters"
+            });
+        }
+
+        const normalizedEmail =
+            String(email).trim().toLowerCase();
+
+        const existingUser = await User.findOne({
+            email: normalizedEmail
+        });
+
+        if (existingUser) {
+            return res.status(409).json({
+                success: false,
+                message: "Email already registered"
+            });
+        }
+
+        const lastUser = await User.findOne()
+            .sort({ createdAt: -1 })
+            .select("userId");
+
+        let nextNumber = 1002;
+
+        if (
+            lastUser &&
+            /^AG\d+$/.test(lastUser.userId)
+        ) {
+            nextNumber =
+                Number(lastUser.userId.slice(2)) + 1;
+        }
+
+        const userId =
+            "AG" + String(nextNumber);
+
+        const hashedPassword =
+            await bcrypt.hash(password, 12);
+
+        const user = await User.create({
+            userId,
+            name: String(name).trim(),
+            email: normalizedEmail,
+            password: hashedPassword,
+            sponsorId: String(sponsorId).trim(),
+            status: "ACTIVE"
+        });
+
+        return res.status(201).json({
+            success: true,
+            message: "Registration successful",
+            user: {
+                userId: user.userId,
+                name: user.name,
+                email: user.email,
+                sponsorId: user.sponsorId,
+                status: user.status
+            }
+        });
+
+    } catch (error) {
+        console.error("REGISTER ERROR:", error);
+
+        return res.status(500).json({
+            success: false,
+            message: "Registration failed"
+        });
+    }
+}
+
+module.exports = registerUser;

@@ -1,0 +1,214 @@
+const bcrypt = require("bcryptjs");
+const User = require("./models/User");
+
+async function registerUser(req, res) {
+    try {
+        const {
+            name,
+            mobile,
+            password,
+            sponsorId = ""
+        } = req.body;
+
+        const cleanName =
+            String(name || "").trim();
+
+        const cleanMobile =
+            String(mobile || "").trim();
+
+        const cleanSponsorId =
+            String(sponsorId || "")
+                .trim()
+                .toUpperCase();
+
+        if (cleanName.length < 2) {
+            return res.status(400).json({
+                success: false,
+                message: "Enter a valid name."
+            });
+        }
+
+        if (!/^[0-9]{10}$/.test(cleanMobile)) {
+            return res.status(400).json({
+                success: false,
+                message: "Enter a valid 10 digit mobile number."
+            });
+        }
+
+        if (
+            typeof password !== "string" ||
+            password.length < 6
+        ) {
+            return res.status(400).json({
+                success: false,
+                message:
+                    "Password must be at least 6 characters."
+            });
+        }
+
+        if (!cleanSponsorId) {
+            return res.status(400).json({
+                success: false,
+                message: "Sponsor ID is required."
+            });
+        }
+
+        const sponsor =
+            await User.findOne({
+                userId: cleanSponsorId
+            }).select("userId");
+
+        if (!sponsor) {
+            return res.status(400).json({
+                success: false,
+                message: "Invalid Sponsor / Referral ID."
+            });
+        }
+
+        const existingUser =
+            await User.findOne({
+                mobile: cleanMobile
+            }).select("userId");
+
+        if (existingUser) {
+            return res.status(409).json({
+                success: false,
+                message:
+                    "Mobile number already registered."
+            });
+        }
+
+        const lastUser =
+            await User.findOne({
+                userId: /^AG[0-9]+$/
+            })
+            .sort({ userId: -1 })
+            .select("userId");
+
+        let nextNumber = 1002;
+
+        if (
+            lastUser &&
+            /^AG[0-9]+$/.test(lastUser.userId)
+        ) {
+            nextNumber =
+                Number(
+                    lastUser.userId.substring(2)
+                ) + 1;
+        }
+
+        const userId =
+            "AG" + nextNumber;
+
+        const hashedPassword =
+            await bcrypt.hash(password, 12);
+
+        const user =
+            await User.create({
+
+                userId,
+
+                name:
+                    cleanName,
+
+                mobile:
+                    cleanMobile,
+
+                password:
+                    hashedPassword,
+
+                sponsorId:
+                    cleanSponsorId,
+
+                status:
+                    "PACKAGE NOT ACTIVE",
+
+                packages: [],
+
+                package: 0,
+
+                roiDaily: 0,
+
+                walletBal: 0,
+
+                totalEarned: 0,
+
+                roiEarned: 0,
+
+                teamEarned: 0,
+
+                referrals: 0,
+
+                upiId: "",
+
+                commissionHistory: [],
+
+                lastRoiDate: null
+            });
+
+        await User.updateOne(
+            {
+                userId:
+                    cleanSponsorId
+            },
+            {
+                $inc: {
+                    referrals: 1
+                }
+            }
+        );
+
+        return res.status(201).json({
+
+            success: true,
+
+            message:
+                "Registration successful.",
+
+            user: {
+
+                userId:
+                    user.userId,
+
+                name:
+                    user.name,
+
+                mobile:
+                    user.mobile,
+
+                sponsorId:
+                    user.sponsorId,
+
+                status:
+                    user.status
+            }
+        });
+
+    } catch (error) {
+
+        console.error(
+            "REGISTER ERROR:",
+            error
+        );
+
+        if (
+            error &&
+            error.code === 11000
+        ) {
+            return res.status(409).json({
+                success: false,
+                message:
+                    "User data already exists."
+            });
+        }
+
+        return res.status(500).json({
+            success: false,
+            message:
+                "Registration failed."
+        });
+    }
+}
+
+module.exports =
+    registerUser;

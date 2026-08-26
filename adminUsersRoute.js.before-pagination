@@ -1,0 +1,35 @@
+const User = require("./models/User");
+
+async function getAdminUsers(req, res) {
+    try {
+        const users = await User.find({})
+            .select(
+                "userId name email mobile role active status package walletBal totalEarned roiEarned teamEarned referrals sponsorId createdAt"
+            )
+            .sort({
+                createdAt: -1
+            })
+            .lean();
+
+        return res.json({
+            success: true,
+            count: users.length,
+            users
+        });
+
+    } catch (error) {
+        console.error(
+            "ADMIN USERS ERROR:",
+            error
+        );
+
+        return res.status(500).json({
+            success: false,
+            message:
+                "Unable to fetch users."
+        });
+    }
+}
+
+module.exports =
+    getAdminUsers;
