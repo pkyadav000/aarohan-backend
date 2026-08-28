@@ -39,7 +39,7 @@ async function getAdminUsers(req, res) {
             const regex =
                 new RegExp(escaped, "i");
 
-            query.$or = [
+                       query.$or = [
                 { userId: regex },
                 { name: regex },
                 { email: regex },
@@ -48,18 +48,18 @@ async function getAdminUsers(req, res) {
         }
 
         if (status === "ACTIVE") {
-            query.active = true;
-        }
+    query.status = "ACTIVE";
+}
 
-        if (status === "BLOCKED") {
-            query.active = false;
-        }
+if (status === "BLOCKED") {
+    query.status = "SUSPENDED";
+}
 
         const [users, total] =
             await Promise.all([
                 User.find(query)
                     .select(
-                        "userId name email mobile role active status package walletBal totalEarned roiEarned teamEarned referrals sponsorId createdAt"
+    "userId name email mobile role status package walletBal totalEarned roiEarned teamEarned referrals sponsorId createdAt"
                     )
                     .sort({
                         createdAt: -1

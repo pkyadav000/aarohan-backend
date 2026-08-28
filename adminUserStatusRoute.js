@@ -49,8 +49,6 @@ async function updateUserStatus(req, res) {
             });
         }
 
-        user.active =
-            action === "UNBLOCK";
 
         if (action === "BLOCK") {
             user.status = "SUSPENDED";
@@ -68,12 +66,12 @@ async function updateUserStatus(req, res) {
                 action === "BLOCK"
                     ? "User blocked successfully."
                     : "User unblocked successfully.",
-            user: {
-                userId: user.userId,
-                name: user.name,
-                active: user.active,
-                status: user.status
-            }
+user: {
+    userId: user.userId,
+    name: user.name,
+    status: user.status
+}
+
         });
 
     } catch (error) {

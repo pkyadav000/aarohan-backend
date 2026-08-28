@@ -127,32 +127,41 @@ email: {
             index: true
         },
 
-        status: {
-            type: String,
-            enum: [
-                "ACTIVE",
-                "SUSPENDED",
-                "PACKAGE NOT ACTIVE"
-            ],
-            default: "PACKAGE NOT ACTIVE"
-        },
+       status: {
+    type: String,
+    enum: [
+        "ACTIVE",
+        "SUSPENDED",
+        "PACKAGE NOT ACTIVE"
+    ],
+    default: "PACKAGE NOT ACTIVE"
+},
 
-        packages: {
-            type: [packageSchema],
-            default: []
-        },
+statusBeforeSuspend: {
+    type: String,
+    enum: [
+        "ACTIVE",
+        "PACKAGE NOT ACTIVE"
+    ],
+    default: null
+},
 
-        package: {
-            type: Number,
-            default: 0,
-            min: 0
-        },
+packages: {
+    type: [packageSchema],
+    default: []
+},
 
-        roiDaily: {
-            type: Number,
-            default: 0,
-            min: 0
-        },
+package: {
+    type: Number,
+    default: 0,
+    min: 0
+},
+
+roiDaily: {
+    type: Number,
+    default: 0,
+    min: 0
+},
 
         walletBal: {
             type: Number,
