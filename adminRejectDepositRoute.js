@@ -3,8 +3,9 @@ const Deposit = require("./models/Deposit");
 async function rejectDeposit(req, res) {
     try {
         const { depositId } = req.params;
+
         const reason =
-            String(req.body?.reason || "").trim();
+            String(req.body?.rejectionReason || "").trim();
 
         if (!depositId) {
             return res.status(400).json({
@@ -13,9 +14,10 @@ async function rejectDeposit(req, res) {
             });
         }
 
-        const deposit = await Deposit.findOne({
-            depositId
-        });
+        const deposit =
+            await Deposit.findOne({
+                depositId
+            });
 
         if (!deposit) {
             return res.status(404).json({
@@ -32,29 +34,49 @@ async function rejectDeposit(req, res) {
             });
         }
 
+        // ---------------------------------------------------------
+        // REJECT DEPOSIT
+        // ---------------------------------------------------------
+
         deposit.status = "REJECTED";
-        deposit.rejectionReason = reason;
-        deposit.approvedBy = req.auth.userId;
-        deposit.approvedAt = new Date();
+
+        deposit.rejectionReason =
+            reason;
+
+        deposit.rejectedBy =
+            req.auth.userId;
+
+        deposit.rejectedAt =
+            new Date();
 
         await deposit.save();
 
         return res.json({
             success: true,
-            message: "Deposit rejected.",
+
+            message:
+                "Deposit rejected.",
+
             deposit: {
-                depositId: deposit.depositId,
-                status: deposit.status,
+                depositId:
+                    deposit.depositId,
+
+                status:
+                    deposit.status,
+
                 rejectionReason:
                     deposit.rejectionReason,
+
                 rejectedBy:
-                    deposit.approvedBy,
+                    deposit.rejectedBy,
+
                 rejectedAt:
-                    deposit.approvedAt
+                    deposit.rejectedAt
             }
         });
 
     } catch (error) {
+
         console.error(
             "REJECT DEPOSIT ERROR:",
             error
@@ -62,9 +84,11 @@ async function rejectDeposit(req, res) {
 
         return res.status(500).json({
             success: false,
-            message: "Deposit rejection failed."
+            message:
+                "Deposit rejection failed."
         });
     }
 }
 
-module.exports = rejectDeposit;
+module.exports =
+    rejectDeposit;

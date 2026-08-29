@@ -51,6 +51,16 @@ const depositSchema = new mongoose.Schema(
         rejectionReason: {
             type: String,
             default: ""
+        },
+
+        rejectedBy: {
+            type: String,
+            default: null
+        },
+
+        rejectedAt: {
+            type: Date,
+            default: null
         }
     },
     {
@@ -58,5 +68,7 @@ const depositSchema = new mongoose.Schema(
     }
 );
 
-module.exports =
-    mongoose.model("Deposit", depositSchema);
+module.exports = mongoose.model(
+    "Deposit",
+    depositSchema
+);

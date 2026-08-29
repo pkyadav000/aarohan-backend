@@ -42,6 +42,11 @@ function authenticate(req, res, next) {
 
         req.auth = decoded;
 
+        console.log("AUTH DEBUG:", {
+            userId: decoded.userId,
+            role: decoded.role
+        });
+
         next();
 
     } catch (error) {
