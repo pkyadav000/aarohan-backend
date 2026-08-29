@@ -16,13 +16,23 @@ async function getMe(req, res) {
 
         return res.json({
             success: true,
+
             user: {
                 userId: user.userId,
                 name: user.name,
                 mobile: user.mobile,
                 sponsorId: user.sponsorId,
+                role: user.role,
                 status: user.status,
+
+                // Total active package amount
                 package: user.package,
+
+                // IMPORTANT: complete package list
+                packages: Array.isArray(user.packages)
+                    ? user.packages
+                    : [],
+
                 walletBal: user.walletBal,
                 totalEarned: user.totalEarned,
                 roiEarned: user.roiEarned,
