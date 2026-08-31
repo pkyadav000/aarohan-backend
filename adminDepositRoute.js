@@ -88,6 +88,48 @@ async function approveDeposit(req, res) {
             });
         }
 
+
+        // ---------------------------------------------------------
+        // ATOMIC APPROVAL CLAIM
+        // ---------------------------------------------------------
+        // Claim the PENDING deposit before creating the package
+        // or crediting any Direct Bonus.
+        const updatedDeposit =
+            await Deposit.findOneAndUpdate(
+                {
+                    _id: deposit._id,
+                    status: "PENDING"
+                },
+                {
+                    $set: {
+                        status: "APPROVED",
+                        approvedBy:
+                            req.auth.userId,
+                        approvedAt:
+                            new Date()
+                    }
+                },
+                {
+                    new: true,
+                    session
+                }
+            );
+
+        if (!updatedDeposit) {
+            await session.abortTransaction();
+
+            return res.status(409).json({
+                success: false,
+                message:
+                    "Deposit was already processed."
+            });
+        }
+
+        // ---------------------------------------------------------
+        // ATOMIC APPROVAL CLAIM
+        // ---------------------------------------------------------
+        // Claim the PENDING deposit before creating the package
+        // or crediting any Direct Bonus.
         const user = await User.findOne({
             userId: deposit.userId
         }).session(session);
@@ -144,6 +186,19 @@ async function approveDeposit(req, res) {
             maxCap,
             approvalDate,
             lastRoiDate: null
+        });
+
+        // ---------------------------------------------------------
+        // LINK APPROVED DEPOSIT TO CREATED PACKAGE
+        // ---------------------------------------------------------
+        // Use the atomically approved document itself.
+        // This creates an exact 1:1 relationship:
+        // Deposit -> Package
+        updatedDeposit.packageId = packageId;
+
+        // Persist Deposit -> Package mapping
+        await updatedDeposit.save({
+            session
         });
 
         user.package =
@@ -234,11 +289,10 @@ async function approveDeposit(req, res) {
                         Number(
                             bonusSponsor.totalEarned || 0
                         ) + directBonus;
-
-                    bonusSponsor.teamEarned =
-                        Number(
-                            bonusSponsor.teamEarned || 0
-                        ) + directBonus;
+                      bonusSponsor.directEarned =
+                          Number(
+                              bonusSponsor.directEarned || 0
+                          ) + directBonus;
 
                     if (
                         !Array.isArray(
@@ -321,37 +375,6 @@ async function approveDeposit(req, res) {
                     );
                 }
             }
-        }
-
-        const updatedDeposit =
-            await Deposit.findOneAndUpdate(
-                {
-                    _id: deposit._id,
-                    status: "PENDING"
-                },
-                {
-                    $set: {
-                        status: "APPROVED",
-                        approvedBy:
-                            req.auth.userId,
-                        approvedAt:
-                            new Date()
-                    }
-                },
-                {
-                    new: true,
-                    session
-                }
-            );
-
-        if (!updatedDeposit) {
-            await session.abortTransaction();
-
-            return res.status(409).json({
-                success: false,
-                message:
-                    "Deposit was already processed."
-            });
         }
 
         await user.save({

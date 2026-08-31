@@ -21,6 +21,12 @@ const depositSchema = new mongoose.Schema(
             min: 1
         },
 
+        packageId: {
+            type: String,
+            default: null,
+            index: true
+        },
+
         status: {
             type: String,
             enum: [
