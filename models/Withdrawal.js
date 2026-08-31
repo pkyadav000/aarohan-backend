@@ -48,6 +48,16 @@ const withdrawalSchema = new mongoose.Schema(
             default: null
         },
 
+        rejectedBy: {
+            type: String,
+            default: null
+        },
+
+        rejectedAt: {
+            type: Date,
+            default: null
+        },
+
         rejectionReason: {
             type: String,
             default: ""
@@ -58,8 +68,7 @@ const withdrawalSchema = new mongoose.Schema(
     }
 );
 
-module.exports =
-    mongoose.model(
-        "Withdrawal",
-        withdrawalSchema
-    );
+module.exports = mongoose.model(
+    "Withdrawal",
+    withdrawalSchema
+);

@@ -3,6 +3,7 @@ const Withdrawal = require("./models/Withdrawal");
 async function rejectWithdrawal(req, res) {
     try {
         const { withdrawalId } = req.params;
+
         const reason =
             String(req.body?.reason || "").trim();
 
@@ -33,31 +34,49 @@ async function rejectWithdrawal(req, res) {
             });
         }
 
+        // ---------------------------------------------------------
+        // REJECT WITHDRAWAL
+        // ---------------------------------------------------------
+
         withdrawal.status = "REJECTED";
-        withdrawal.rejectionReason = reason;
-        withdrawal.approvedBy = req.auth.userId;
-        withdrawal.approvedAt = new Date();
+
+        withdrawal.rejectionReason =
+            reason;
+
+        withdrawal.rejectedBy =
+            req.auth.userId;
+
+        withdrawal.rejectedAt =
+            new Date();
 
         await withdrawal.save();
 
         return res.json({
             success: true,
-            message: "Withdrawal rejected.",
+
+            message:
+                "Withdrawal rejected.",
+
             withdrawal: {
                 withdrawalId:
                     withdrawal.withdrawalId,
+
                 status:
                     withdrawal.status,
+
                 rejectionReason:
                     withdrawal.rejectionReason,
+
                 rejectedBy:
-                    withdrawal.approvedBy,
+                    withdrawal.rejectedBy,
+
                 rejectedAt:
-                    withdrawal.approvedAt
+                    withdrawal.rejectedAt
             }
         });
 
     } catch (error) {
+
         console.error(
             "REJECT WITHDRAWAL ERROR:",
             error
@@ -71,5 +90,4 @@ async function rejectWithdrawal(req, res) {
     }
 }
 
-module.exports =
-    rejectWithdrawal;
+module.exports = rejectWithdrawal;

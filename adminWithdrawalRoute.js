@@ -1,6 +1,8 @@
 const mongoose = require("mongoose");
+
 const Withdrawal = require("./models/Withdrawal");
 const User = require("./models/User");
+const Transaction = require("./models/Transaction");
 
 async function approveWithdrawal(req, res) {
     const session = await mongoose.startSession();
@@ -16,6 +18,10 @@ async function approveWithdrawal(req, res) {
         }
 
         session.startTransaction();
+
+        // ---------------------------------------------------------
+        // FIND PENDING WITHDRAWAL
+        // ---------------------------------------------------------
 
         const withdrawal = await Withdrawal.findOne({
             withdrawalId
@@ -40,6 +46,10 @@ async function approveWithdrawal(req, res) {
             });
         }
 
+        // ---------------------------------------------------------
+        // FIND USER
+        // ---------------------------------------------------------
+
         const user = await User.findOne({
             userId: withdrawal.userId
         }).session(session);
@@ -53,28 +63,31 @@ async function approveWithdrawal(req, res) {
             });
         }
 
-        /*
-         * Atomic balance check + debit.
-         * This prevents negative balance and double-debit
-         * when approval requests race each other.
-         */
-        const updatedUser = await User.findOneAndUpdate(
-            {
-                _id: user._id,
-                walletBal: {
-                    $gte: withdrawal.amount
+        // ---------------------------------------------------------
+        // ATOMIC WALLET DEBIT
+        // ---------------------------------------------------------
+        // Prevents negative balance and protects against
+        // concurrent approval requests.
+        // ---------------------------------------------------------
+
+        const updatedUser =
+            await User.findOneAndUpdate(
+                {
+                    _id: user._id,
+                    walletBal: {
+                        $gte: withdrawal.amount
+                    }
+                },
+                {
+                    $inc: {
+                        walletBal: -withdrawal.amount
+                    }
+                },
+                {
+                    new: true,
+                    session
                 }
-            },
-            {
-                $inc: {
-                    walletBal: -withdrawal.amount
-                }
-            },
-            {
-                new: true,
-                session
-            }
-        );
+            );
 
         if (!updatedUser) {
             await session.abortTransaction();
@@ -84,6 +97,10 @@ async function approveWithdrawal(req, res) {
                 message: "Insufficient wallet balance."
             });
         }
+
+        // ---------------------------------------------------------
+        // ATOMIC WITHDRAWAL APPROVAL CLAIM
+        // ---------------------------------------------------------
 
         const updatedWithdrawal =
             await Withdrawal.findOneAndUpdate(
@@ -110,29 +127,94 @@ async function approveWithdrawal(req, res) {
             );
         }
 
+        // ---------------------------------------------------------
+        // WITHDRAWAL TRANSACTION LEDGER
+        // ---------------------------------------------------------
+        // transactionId = withdrawalId
+        //
+        // This gives us an exact 1:1 relationship:
+        //
+        // Withdrawal WDR1001
+        //        ↓
+        // Transaction WDR1001
+        //
+        // Unique transactionId prevents duplicate ledger entries.
+        // ---------------------------------------------------------
+
+        await Transaction.create(
+            [
+                {
+                    transactionId:
+                        updatedWithdrawal.withdrawalId,
+
+                    userId:
+                        updatedWithdrawal.userId,
+
+                    type:
+                        "WITHDRAWAL",
+
+                    amount:
+                        updatedWithdrawal.amount,
+
+                    status:
+                        "APPROVED",
+
+                    reference:
+                        updatedWithdrawal.withdrawalId,
+
+                    packageId:
+                        "",
+
+                    fromUser:
+                        "",
+
+                    level:
+                        0,
+
+                    date:
+                        new Date().toISOString()
+                }
+            ],
+            {
+                session
+            }
+        );
+
+        // ---------------------------------------------------------
+        // COMMIT EVERYTHING
+        // ---------------------------------------------------------
+
         await session.commitTransaction();
 
         return res.json({
             success: true,
+
             message:
                 "Withdrawal approved and wallet debited.",
+
             withdrawal: {
                 withdrawalId:
                     updatedWithdrawal.withdrawalId,
+
                 status:
                     updatedWithdrawal.status,
+
                 amount:
                     updatedWithdrawal.amount,
+
                 approvedBy:
                     updatedWithdrawal.approvedBy,
+
                 approvedAt:
                     updatedWithdrawal.approvedAt
             },
+
             walletBalance:
                 updatedUser.walletBal
         });
 
     } catch (error) {
+
         try {
             await session.abortTransaction();
         } catch (_) {}
@@ -141,6 +223,15 @@ async function approveWithdrawal(req, res) {
             "APPROVE WITHDRAWAL ERROR:",
             error
         );
+
+        // Duplicate transaction protection
+        if (error && error.code === 11000) {
+            return res.status(409).json({
+                success: false,
+                message:
+                    "Withdrawal transaction already exists."
+            });
+        }
 
         return res.status(500).json({
             success: false,

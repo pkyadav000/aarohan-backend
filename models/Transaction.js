@@ -32,7 +32,19 @@ const transactionSchema = new mongoose.Schema(
         amount: {
             type: Number,
             required: true,
-            min: 0
+            min: 0,
+
+            set: function(value) {
+                const amount = Number(value);
+
+                if (!Number.isFinite(amount)) {
+                    return 0;
+                }
+
+                return Math.round(
+                    (amount + Number.EPSILON) * 100
+                ) / 100;
+            }
         },
 
         status: {

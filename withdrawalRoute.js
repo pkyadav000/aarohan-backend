@@ -19,6 +19,13 @@ async function createWithdrawal(req, res) {
             });
         }
 
+        if (numericAmount < 750) {
+            return res.status(400).json({
+                success: false,
+                message: "Minimum withdrawal amount is ₹750."
+            });
+        }
+
         if (numericAmount > 10000000) {
             return res.status(400).json({
                 success: false,
@@ -60,6 +67,32 @@ async function createWithdrawal(req, res) {
                 message: "Insufficient wallet balance."
             });
         }
+
+// ---------------------------------------------------------
+// OPTION A — ONLY ONE PENDING WITHDRAWAL PER USER
+// ---------------------------------------------------------
+
+const existingPending =
+    await Withdrawal.findOne({
+        userId: user.userId,
+        status: "PENDING"
+    }).select("withdrawalId amount");
+
+if (existingPending) {
+    return res.status(409).json({
+        success: false,
+        message:
+            "You already have a pending withdrawal request. Please wait for admin review.",
+        withdrawal: {
+            withdrawalId:
+                existingPending.withdrawalId,
+            amount:
+                existingPending.amount,
+            status:
+                "PENDING"
+        }
+    });
+}
 
         const lastWithdrawal =
             await Withdrawal.findOne({
