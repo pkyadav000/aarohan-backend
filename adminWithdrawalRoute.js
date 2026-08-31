@@ -99,6 +99,15 @@ async function approveWithdrawal(req, res) {
         }
 
         // ---------------------------------------------------------
+        // NORMALIZE WALLET BALANCE TO 2 DECIMAL PLACES
+        // ---------------------------------------------------------
+
+        updatedUser.walletBal =
+            Math.round(
+                (Number(updatedUser.walletBal) + Number.EPSILON) * 100
+            ) / 100;
+
+        // ---------------------------------------------------------
         // ATOMIC WITHDRAWAL APPROVAL CLAIM
         // ---------------------------------------------------------
 
