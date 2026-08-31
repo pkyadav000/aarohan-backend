@@ -1,6 +1,9 @@
+const mongoose = require("mongoose");
 const Withdrawal = require("./models/Withdrawal");
 
 async function rejectWithdrawal(req, res) {
+    const session = await mongoose.startSession();
+
     try {
         const { withdrawalId } = req.params;
 
@@ -14,68 +17,76 @@ async function rejectWithdrawal(req, res) {
             });
         }
 
+        session.startTransaction();
+
+        // ---------------------------------------------------------
+        // ATOMIC REJECTION CLAIM
+        // ---------------------------------------------------------
+        // Only a PENDING withdrawal can be changed to REJECTED.
+        // Prevents duplicate/concurrent rejection.
+        // ---------------------------------------------------------
+
         const withdrawal =
-            await Withdrawal.findOne({
-                withdrawalId
-            });
+            await Withdrawal.findOneAndUpdate(
+                {
+                    withdrawalId,
+                    status: "PENDING"
+                },
+                {
+                    $set: {
+                        status: "REJECTED",
+                        rejectionReason: reason,
+                        rejectedBy: req.auth.userId,
+                        rejectedAt: new Date()
+                    }
+                },
+                {
+                    new: true,
+                    session
+                }
+            );
 
         if (!withdrawal) {
-            return res.status(404).json({
-                success: false,
-                message: "Withdrawal not found."
-            });
-        }
+            const existing =
+                await Withdrawal.findOne({ withdrawalId })
+                    .select("status")
+                    .session(session)
+                    .lean();
 
-        if (withdrawal.status !== "PENDING") {
+            await session.abortTransaction();
+
+            if (!existing) {
+                return res.status(404).json({
+                    success: false,
+                    message: "Withdrawal not found."
+                });
+            }
+
             return res.status(409).json({
                 success: false,
                 message:
-                    `Withdrawal is already ${withdrawal.status.toLowerCase()}.`
+                    `Withdrawal is already ${existing.status.toLowerCase()}.`
             });
         }
 
-        // ---------------------------------------------------------
-        // REJECT WITHDRAWAL
-        // ---------------------------------------------------------
-
-        withdrawal.status = "REJECTED";
-
-        withdrawal.rejectionReason =
-            reason;
-
-        withdrawal.rejectedBy =
-            req.auth.userId;
-
-        withdrawal.rejectedAt =
-            new Date();
-
-        await withdrawal.save();
+        await session.commitTransaction();
 
         return res.json({
             success: true,
-
-            message:
-                "Withdrawal rejected.",
-
+            message: "Withdrawal rejected.",
             withdrawal: {
-                withdrawalId:
-                    withdrawal.withdrawalId,
-
-                status:
-                    withdrawal.status,
-
-                rejectionReason:
-                    withdrawal.rejectionReason,
-
-                rejectedBy:
-                    withdrawal.rejectedBy,
-
-                rejectedAt:
-                    withdrawal.rejectedAt
+                withdrawalId: withdrawal.withdrawalId,
+                status: withdrawal.status,
+                rejectionReason: withdrawal.rejectionReason,
+                rejectedBy: withdrawal.rejectedBy,
+                rejectedAt: withdrawal.rejectedAt
             }
         });
 
     } catch (error) {
+        try {
+            await session.abortTransaction();
+        } catch (_) {}
 
         console.error(
             "REJECT WITHDRAWAL ERROR:",
@@ -84,9 +95,11 @@ async function rejectWithdrawal(req, res) {
 
         return res.status(500).json({
             success: false,
-            message:
-                "Withdrawal rejection failed."
+            message: "Withdrawal rejection failed."
         });
+
+    } finally {
+        await session.endSession();
     }
 }
 

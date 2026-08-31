@@ -1,6 +1,9 @@
+const mongoose = require("mongoose");
 const Deposit = require("./models/Deposit");
 
 async function rejectDeposit(req, res) {
+    const session = await mongoose.startSession();
+
     try {
         const { depositId } = req.params;
 
@@ -14,68 +17,76 @@ async function rejectDeposit(req, res) {
             });
         }
 
+        session.startTransaction();
+
+        // ---------------------------------------------------------
+        // ATOMIC REJECTION CLAIM
+        // ---------------------------------------------------------
+        // Only a PENDING deposit can be changed to REJECTED.
+        // Prevents duplicate/concurrent rejection.
+        // ---------------------------------------------------------
+
         const deposit =
-            await Deposit.findOne({
-                depositId
-            });
+            await Deposit.findOneAndUpdate(
+                {
+                    depositId,
+                    status: "PENDING"
+                },
+                {
+                    $set: {
+                        status: "REJECTED",
+                        rejectionReason: reason,
+                        rejectedBy: req.auth.userId,
+                        rejectedAt: new Date()
+                    }
+                },
+                {
+                    new: true,
+                    session
+                }
+            );
 
         if (!deposit) {
-            return res.status(404).json({
-                success: false,
-                message: "Deposit not found."
-            });
-        }
+            const existing =
+                await Deposit.findOne({ depositId })
+                    .select("status")
+                    .session(session)
+                    .lean();
 
-        if (deposit.status !== "PENDING") {
+            await session.abortTransaction();
+
+            if (!existing) {
+                return res.status(404).json({
+                    success: false,
+                    message: "Deposit not found."
+                });
+            }
+
             return res.status(409).json({
                 success: false,
                 message:
-                    `Deposit is already ${deposit.status.toLowerCase()}.`
+                    `Deposit is already ${existing.status.toLowerCase()}.`
             });
         }
 
-        // ---------------------------------------------------------
-        // REJECT DEPOSIT
-        // ---------------------------------------------------------
-
-        deposit.status = "REJECTED";
-
-        deposit.rejectionReason =
-            reason;
-
-        deposit.rejectedBy =
-            req.auth.userId;
-
-        deposit.rejectedAt =
-            new Date();
-
-        await deposit.save();
+        await session.commitTransaction();
 
         return res.json({
             success: true,
-
-            message:
-                "Deposit rejected.",
-
+            message: "Deposit rejected.",
             deposit: {
-                depositId:
-                    deposit.depositId,
-
-                status:
-                    deposit.status,
-
-                rejectionReason:
-                    deposit.rejectionReason,
-
-                rejectedBy:
-                    deposit.rejectedBy,
-
-                rejectedAt:
-                    deposit.rejectedAt
+                depositId: deposit.depositId,
+                status: deposit.status,
+                rejectionReason: deposit.rejectionReason,
+                rejectedBy: deposit.rejectedBy,
+                rejectedAt: deposit.rejectedAt
             }
         });
 
     } catch (error) {
+        try {
+            await session.abortTransaction();
+        } catch (_) {}
 
         console.error(
             "REJECT DEPOSIT ERROR:",
@@ -84,11 +95,12 @@ async function rejectDeposit(req, res) {
 
         return res.status(500).json({
             success: false,
-            message:
-                "Deposit rejection failed."
+            message: "Deposit rejection failed."
         });
+
+    } finally {
+        await session.endSession();
     }
 }
 
-module.exports =
-    rejectDeposit;
+module.exports = rejectDeposit;
