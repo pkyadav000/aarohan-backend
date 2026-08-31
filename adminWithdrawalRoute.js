@@ -107,6 +107,8 @@ async function approveWithdrawal(req, res) {
                 (Number(updatedUser.walletBal) + Number.EPSILON) * 100
             ) / 100;
 
+        await updatedUser.save({ session });
+
         // ---------------------------------------------------------
         // ATOMIC WITHDRAWAL APPROVAL CLAIM
         // ---------------------------------------------------------
