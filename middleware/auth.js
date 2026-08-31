@@ -1,6 +1,7 @@
 const jwt = require("jsonwebtoken");
+const User = require("../models/User");
 
-function authenticate(req, res, next) {
+async function authenticate(req, res, next) {
     try {
         const header =
             req.headers.authorization || "";
@@ -40,12 +41,56 @@ function authenticate(req, res, next) {
         const decoded =
             jwt.verify(token, secret);
 
-        req.auth = decoded;
+        if (!decoded.userId) {
+            return res.status(401).json({
+                success: false,
+                message:
+                    "Invalid authentication token."
+            });
+        }
 
-        console.log("AUTH DEBUG:", {
-            userId: decoded.userId,
-            role: decoded.role
-        });
+        // -------------------------------------------------
+        // VERIFY USER STILL EXISTS AND CHECK CURRENT STATUS
+        // -------------------------------------------------
+
+        const user =
+            await User.findOne({
+                userId: decoded.userId
+            })
+                .select(
+                    "userId role status"
+                )
+                .lean();
+
+        if (!user) {
+            return res.status(401).json({
+                success: false,
+                message:
+                    "User account no longer exists."
+            });
+        }
+
+        // -------------------------------------------------
+        // BLOCK SUSPENDED USERS EVEN WITH OLD JWT
+        // -------------------------------------------------
+
+        if (user.status === "SUSPENDED") {
+            return res.status(403).json({
+                success: false,
+                message:
+                    "Your account is suspended."
+            });
+        }
+
+        // -------------------------------------------------
+        // USE CURRENT DATABASE ROLE
+        // DO NOT TRUST OLD JWT ROLE
+        // -------------------------------------------------
+
+        req.auth = {
+            userId: user.userId,
+            role: user.role || "USER"
+        };
 
         next();
 
@@ -53,7 +98,8 @@ function authenticate(req, res, next) {
 
         return res.status(401).json({
             success: false,
-            message: "Invalid or expired token."
+            message:
+                "Invalid or expired token."
         });
     }
 }
@@ -66,7 +112,8 @@ function requireAdmin(req, res, next) {
     ) {
         return res.status(403).json({
             success: false,
-            message: "Admin access required."
+            message:
+                "Admin access required."
         });
     }
 
