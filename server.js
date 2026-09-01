@@ -15,6 +15,7 @@ const cors = require("cors");
 const registerUser = require("./registerRoute");
 const loginUser = require("./loginRoute");
 const getMe = require("./meRoute");
+const getTeam = require("./teamRoute");
 const { authenticate, requireAdmin } = require("./middleware/auth");
 const createDeposit = require("./depositRoute");
 const approveDeposit = require("./adminDepositRoute");
@@ -65,6 +66,7 @@ app.get("/api/health", (req, res) => {
 app.post("/api/auth/register", registerUser);
 app.post("/api/auth/login", loginUser);
 app.get("/api/auth/me", authenticate, getMe);
+app.get("/api/team", authenticate, getTeam);
 app.post("/api/deposits", authenticate, createDeposit);
 app.post("/api/admin/deposits/:depositId/approve", authenticate, requireAdmin, approveDeposit);
 app.post("/api/admin/deposits/:depositId/reject", authenticate, requireAdmin, rejectDeposit);
@@ -91,20 +93,6 @@ async function startServer() {
             "MONGODB CONNECTION OK"
         );
 
-        try {
-            await processDailyROI();
-
-            console.log(
-                "ROI ENGINE INITIAL RUN COMPLETE"
-            );
-
-        } catch (roiError) {
-
-            console.error(
-                "ROI ENGINE START ERROR:",
-                roiError
-            );
-        }
 
         startROIScheduler();
         app.listen(
