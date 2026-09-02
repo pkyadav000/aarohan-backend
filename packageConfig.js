@@ -28,6 +28,11 @@ const COMMISSION_RATES = {
 
 const DIRECT_BONUS_RATE = 0.05;
 
+
+// =========================================================
+// PACKAGE HELPERS
+// =========================================================
+
 function getPackageRule(amount) {
     const numericAmount = Number(amount);
 
@@ -38,9 +43,11 @@ function getPackageRule(amount) {
     return PACKAGE_RULES[numericAmount] || null;
 }
 
+
 function isAllowedPackage(amount) {
     return Boolean(getPackageRule(amount));
 }
+
 
 function getDailyROI(amount) {
     const rule = getPackageRule(amount);
@@ -52,6 +59,7 @@ function getDailyROI(amount) {
     return Number(amount) * rule.dailyRoiRate;
 }
 
+
 function getMaxCap(amount) {
     const rule = getPackageRule(amount);
 
@@ -62,12 +70,93 @@ function getMaxCap(amount) {
     return Number(amount) * rule.maxCapMultiplier;
 }
 
+
+// =========================================================
+// COMBINED USER EARNING CAP
+//
+// ROI + DIRECT BONUS + TEAM ROI
+// sab isi total earning cap ke andar count honge.
+//
+// Example:
+// ₹999 package  -> ₹2,997 total cap
+// ₹1,999        -> ₹5,997
+// ₹4,999        -> ₹14,997
+// ₹9,999        -> ₹29,997
+//
+// Multiple packages = combined cap
+// =========================================================
+
+function getUserMaxEarningCap(user) {
+    if (!user || !Array.isArray(user.packages)) {
+        return 0;
+    }
+
+    return user.packages.reduce((total, pkg) => {
+        if (!pkg) {
+            return total;
+        }
+
+        const amount = Number(pkg.amount || 0);
+
+        if (!Number.isFinite(amount) || amount <= 0) {
+            return total;
+        }
+
+        // Existing package maxCap ko respect karo.
+        // Agar old package me maxCap missing hai,
+        // to package amount × 3 use hoga.
+        const packageCap =
+            Number(pkg.maxCap) > 0
+                ? Number(pkg.maxCap)
+                : getMaxCap(amount);
+
+        return total + packageCap;
+    }, 0);
+}
+
+
+function getUserEarned(user) {
+    return Number(user?.totalEarned || 0);
+}
+
+
+function getUserRemainingEarningCap(user) {
+    const maxCap = getUserMaxEarningCap(user);
+    const earned = getUserEarned(user);
+
+    return Math.max(0, maxCap - earned);
+}
+
+
+function limitToUserEarningCap(user, requestedAmount) {
+    const requested = Number(requestedAmount);
+
+    if (!Number.isFinite(requested) || requested <= 0) {
+        return 0;
+    }
+
+    return Math.min(
+        requested,
+        getUserRemainingEarningCap(user)
+    );
+}
+
+
 module.exports = {
     PACKAGE_RULES,
+
     COMMISSION_RATES,
+
     DIRECT_BONUS_RATE,
+
     getPackageRule,
     isAllowedPackage,
     getDailyROI,
-    getMaxCap
+    getMaxCap,
+
+    // Combined earning-cap helpers
+    getUserMaxEarningCap,
+    getUserEarned,
+    getUserRemainingEarningCap,
+    limitToUserEarningCap
 };

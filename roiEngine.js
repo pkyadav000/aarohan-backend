@@ -1,11 +1,12 @@
-const { processTeamCommission } = require("./referralEngine");
 const mongoose = require("mongoose");
 
 const User = require("./models/User");
 const Transaction = require("./models/Transaction");
 
 const {
-    COMMISSION_RATES
+    COMMISSION_RATES,
+    getUserRemainingEarningCap,
+    limitToUserEarningCap
 } = require("./packageConfig");
 
 function formatDateUTC(date) {
@@ -64,6 +65,19 @@ async function processROIDate(processDate) {
 
             let userROITotal = 0;
 
+            // =====================================================
+            // COMBINED USER 3X CAP — LOCAL DAILY REMAINING CAP
+            // =====================================================
+            // user.totalEarned is persisted only after all packages
+            // are processed. Therefore keep a local remaining cap
+            // and reduce it after every package ROI credit.
+            // This prevents multiple packages from reusing the
+            // same stale user-level remaining cap.
+            // =====================================================
+
+            let remainingUserCap =
+                getUserRemainingEarningCap(user);
+
             for (const pkg of user.packages) {
 
                 if (!pkg) {
@@ -99,10 +113,21 @@ async function processROIDate(processDate) {
                     continue;
                 }
 
-                // Approval day par ROI nahi.
+                // =====================================================
+                // ROI SAFETY: Approval date se pehle/approval day par
+                // kabhi bhi ROI credit nahi hona chahiye.
+                // First eligible ROI date = approvalDate + 1 day.
+                // =====================================================
+                const approvalDate =
+                    String(pkg.approvalDate || "").slice(0, 10);
+
+                const roiProcessDate =
+                    String(processDate || "").slice(0, 10);
+
                 if (
-                    String(pkg.approvalDate || "") ===
-                    String(processDate)
+                    !approvalDate ||
+                    !roiProcessDate ||
+                    roiProcessDate <= approvalDate
                 ) {
                     continue;
                 }
@@ -139,13 +164,25 @@ async function processROIDate(processDate) {
                     continue;
                 }
 
-                const remaining =
-                    maxCap - earned;
+                // =====================================================
+                // ROI — COMBINED USER 3X EARNING CAP
+                // ROI + DIRECT BONUS + TEAM ROI
+                // sab totalEarned ke same combined cap me count honge.
+                // =====================================================
+
+                const remainingPackageCap =
+                    Math.max(
+                        0,
+                        maxCap - earned
+                    );
 
                 const roiToCredit =
-                    Math.min(
-                        dailyROI,
-                        remaining
+                    Number(
+                        Math.min(
+                            dailyROI,
+                            remainingPackageCap,
+                            remainingUserCap
+                        ).toFixed(2)
                     );
 
                 if (
@@ -159,6 +196,19 @@ async function processROIDate(processDate) {
 
                 pkg.totalEarned =
                     earned + roiToCredit;
+
+                // Reduce local combined user cap immediately so
+                // the next package cannot reuse the same capacity.
+                remainingUserCap =
+                    Math.max(
+                        0,
+                        Number(
+                            (
+                                remainingUserCap -
+                                roiToCredit
+                            ).toFixed(2)
+                        )
+                    );
 
                 pkg.lastRoiDate =
                     processDate;
@@ -206,7 +256,6 @@ async function processROIDate(processDate) {
                     }],
                     { session }
                 );
-    await processTeamCommission(user.userId || user._id, roiToCredit, todayStr);
             }
 
             if (userROITotal > 0) {
@@ -238,38 +287,54 @@ async function processROIDate(processDate) {
         // -----------------------------------------------------
         // TEAM COMMISSION
         // -----------------------------------------------------
+        //
+        // IMPORTANT:
+        // todaysROI[user.userId] already contains the COMPLETE
+        // daily ROI of that source user for processDate.
+        //
+        // L1 = 10%
+        // L2 = 5%
+        // L3 = 3%
+        //
+        // TEAM ROI IS CALCULATED ON DAILY TOTAL ROI,
+        // NOT PACKAGE-WISE.
+        //
+        // Example:
+        // AG1016 daily ROI = ₹1099.80
+        // L1 = ₹1099.80 × 10% = ₹109.98
+        //
+        // Combined earning cap is applied after calculation.
+        // -----------------------------------------------------
 
         for (const user of users) {
 
+            const sourceUserId =
+                String(user.userId || "")
+                    .trim()
+                    .toUpperCase();
+
             const downlineROI =
                 Number(
-                    todaysROI[user.userId] || 0
+                    Number(todaysROI[user.userId] || 0).toFixed(2)
                 );
 
-            if (downlineROI <= 0) {
+            if (!Number.isFinite(downlineROI) || downlineROI <= 0) {
                 continue;
             }
 
             let sponsorId =
-                String(
-                    user.sponsorId || ""
-                )
-                .trim()
-                .toUpperCase();
+                String(user.sponsorId || "")
+                    .trim()
+                    .toUpperCase();
 
-            for (
-                let level = 1;
-                level <= 3;
-                level++
-            ) {
+            for (let level = 1; level <= 3; level++) {
 
                 if (!sponsorId) {
                     break;
                 }
 
-                if (
-                    sponsorId === "AG1001"
-                ) {
+                // Master Admin ko Team ROI nahi dena.
+                if (sponsorId === "AG1001") {
                     break;
                 }
 
@@ -285,98 +350,186 @@ async function processROIDate(processDate) {
                 }
 
                 const rate =
-                    Number(
-                        COMMISSION_RATES[level] || 0
-                    );
+                    Number(COMMISSION_RATES[level] || 0);
 
-                const requested =
-                    downlineROI * rate;
-
-                const sponsorCap =
-                    Array.isArray(
-                        sponsor.packages
-                    )
-                        ? sponsor.packages.reduce(
-                            (total, pkg) =>
-                                total +
-                                Number(
-                                    pkg.maxCap ||
-                                    Number(pkg.amount || 0) * 3
-                                ),
-                            0
-                        )
-                        : 0;
-
-                const sponsorEarned =
-                    Number(
-                        sponsor.totalEarned || 0
-                    );
-
-                const remaining =
-                    Math.max(
-                        0,
-                        sponsorCap -
-                        sponsorEarned
-                    );
-
-                const commission =
-                    Math.min(
-                        requested,
-                        remaining
-                    );
-
-                if (commission > 0) {
-
-                    sponsor.walletBal =
-                        Number(
-                            sponsor.walletBal || 0
-                        ) + commission;
-
-                    sponsor.totalEarned =
-                        Number(
-                            sponsor.totalEarned || 0
-                        ) + commission;
-
-                    sponsor.teamEarned =
-                        Number(
-                            sponsor.teamEarned || 0
-                        ) + commission;
-
-                    await Transaction.create(
-                        [{
-                            transactionId:
-                                `TEAM_${processDate}_${level}_${user.userId}_${sponsor.userId}`,
-                            userId:
-                                sponsor.userId,
-                            type:
-                                "TEAM_ROI",
-                            amount:
-                                commission,
-                            status:
-                                "CREDITED",
-                            reference:
-                                processDate,
-                            fromUser:
-                                user.userId,
-                            level:
-                                level,
-                            date:
-                                processDate
-                        }],
-                        { session }
-                    );
-
-                    await sponsor.save({
-                        session
-                    });
+                if (!Number.isFinite(rate) || rate <= 0) {
+                    break;
                 }
 
+                // -------------------------------------------------
+                // DAILY TOTAL ROI × LEVEL RATE
+                // -------------------------------------------------
+
+                const requested =
+                    Number(
+                        (downlineROI * rate).toFixed(2)
+                    );
+
+                if (!Number.isFinite(requested) || requested <= 0) {
+                    break;
+                }
+
+                // -------------------------------------------------
+                // DETERMINISTIC TRANSACTION ID
+                //
+                // Same source + same date + same level +
+                // same sponsor = exactly one TEAM ROI.
+                // -------------------------------------------------
+
+                const teamTransactionId =
+                    `TEAM_${processDate}_${level}_${sourceUserId}_${sponsor.userId}`;
+
+                // -------------------------------------------------
+                // DUPLICATE PROTECTION
+                // -------------------------------------------------
+
+                const existingTeamTransaction =
+                    await Transaction.findOne({
+                        transactionId: teamTransactionId
+                    }).session(session);
+
+                if (existingTeamTransaction) {
+
+                    console.log(
+                        "TEAM ROI ALREADY PROCESSED:",
+                        teamTransactionId
+                    );
+
+                    sponsorId =
+                        String(sponsor.sponsorId || "")
+                            .trim()
+                            .toUpperCase();
+
+                    continue;
+                }
+
+                // -------------------------------------------------
+                // COMBINED 3X EARNING CAP
+                //
+                // ROI + DIRECT BONUS + TEAM ROI
+                // sab totalEarned mein count hote hain.
+                // -------------------------------------------------
+
+                const remainingSponsorCap =
+                    Number(
+                        getUserRemainingEarningCap(sponsor)
+                    );
+
+                if (
+                    !Number.isFinite(remainingSponsorCap) ||
+                    remainingSponsorCap <= 0
+                ) {
+
+                    console.log(
+                        `[TEAM ROI] CAP REACHED | L${level} | ${sourceUserId} -> ${sponsor.userId}`
+                    );
+
+                    sponsorId =
+                        String(sponsor.sponsorId || "")
+                            .trim()
+                            .toUpperCase();
+
+                    continue;
+                }
+
+                const commission =
+                    Number(
+                        Math.min(
+                            requested,
+                            remainingSponsorCap
+                        ).toFixed(2)
+                    );
+
+                if (!Number.isFinite(commission) || commission <= 0) {
+
+                    sponsorId =
+                        String(sponsor.sponsorId || "")
+                            .trim()
+                            .toUpperCase();
+
+                    continue;
+                }
+
+                // -------------------------------------------------
+                // CREDIT SPONSOR
+                // -------------------------------------------------
+
+                sponsor.walletBal =
+                    Number(
+                        (
+                            Number(sponsor.walletBal || 0) +
+                            commission
+                        ).toFixed(2)
+                    );
+
+                sponsor.totalEarned =
+                    Number(
+                        (
+                            Number(sponsor.totalEarned || 0) +
+                            commission
+                        ).toFixed(2)
+                    );
+
+                sponsor.teamEarned =
+                    Number(
+                        (
+                            Number(sponsor.teamEarned || 0) +
+                            commission
+                        ).toFixed(2)
+                    );
+
+                // -------------------------------------------------
+                // CREATE TEAM ROI TRANSACTION
+                // -------------------------------------------------
+
+                await Transaction.create(
+                    [{
+                        transactionId:
+                            teamTransactionId,
+
+                        userId:
+                            sponsor.userId,
+
+                        type:
+                            "TEAM_ROI",
+
+                        amount:
+                            commission,
+
+                        status:
+                            "CREDITED",
+
+                        reference:
+                            processDate,
+
+                        fromUser:
+                            sourceUserId,
+
+                        level:
+                            level,
+
+                        date:
+                            processDate
+                    }],
+                    { session }
+                );
+
+                await sponsor.save({
+                    session
+                });
+
+                console.log(
+                    `[TEAM ROI] L${level} | ${sourceUserId} -> ${sponsor.userId} | ₹${commission}`
+                );
+
+                // -------------------------------------------------
+                // MOVE TO NEXT UPLINE LEVEL
+                // -------------------------------------------------
+
                 sponsorId =
-                    String(
-                        sponsor.sponsorId || ""
-                    )
-                    .trim()
-                    .toUpperCase();
+                    String(sponsor.sponsorId || "")
+                        .trim()
+                        .toUpperCase();
             }
         }
 
@@ -403,22 +556,22 @@ async function processROIDate(processDate) {
 
 async function processDailyROI() {
 
-    const today =
-        getToday();
+    const today = getToday();
 
     console.log(
         "ROI ENGINE DATE:",
         today
     );
 
-    const users =
-        await User.find({
-            role: "USER"
-        }).select(
-            "packages"
-        );
+    // =========================================================
+    // LOAD ALL USER PACKAGES
+    // =========================================================
 
-    let dates = new Set();
+    const users = await User.find({
+        role: "USER"
+    }).select("packages");
+
+    const dates = new Set();
 
     for (const user of users) {
 
@@ -429,28 +582,96 @@ async function processDailyROI() {
         for (const pkg of user.packages) {
 
             if (
-                pkg &&
-                pkg.status === "ACTIVE" &&
-                pkg.approvalDate
+                !pkg ||
+                pkg.status !== "ACTIVE" ||
+                !pkg.approvalDate
             ) {
-                const next =
+                continue;
+            }
+
+            const approvalDate =
+                String(pkg.approvalDate).slice(0, 10);
+
+            // =====================================================
+            // FIRST POSSIBLE ROI DATE
+            // =====================================================
+
+            const firstEligibleDate =
+                addDays(
+                    approvalDate,
+                    1
+                );
+
+            if (
+                !firstEligibleDate ||
+                firstEligibleDate > today
+            ) {
+                continue;
+            }
+
+            // =====================================================
+            // SMART START DATE
+            //
+            // If ROI was already processed:
+            // start from lastRoiDate + 1
+            //
+            // Otherwise:
+            // start from approvalDate + 1
+            // =====================================================
+
+            const lastRoiDate =
+                String(pkg.lastRoiDate || "")
+                    .slice(0, 10);
+
+            let date = firstEligibleDate;
+
+            if (lastRoiDate) {
+
+                const nextDate =
                     addDays(
-                        pkg.approvalDate,
+                        lastRoiDate,
                         1
                     );
 
                 if (
-                    next &&
-                    next <= today
+                    nextDate &&
+                    nextDate > date
                 ) {
-                    dates.add(next);
+                    date = nextDate;
                 }
+            }
+
+            // =====================================================
+            // ADD ONLY PENDING / MISSED DATES
+            // =====================================================
+
+            while (
+                date &&
+                date <= today
+            ) {
+
+                dates.add(date);
+
+                date =
+                    addDays(
+                        date,
+                        1
+                    );
             }
         }
     }
 
     const sortedDates =
         Array.from(dates).sort();
+
+    console.log(
+        "ROI DATES TO PROCESS:",
+        sortedDates
+    );
+
+    // =========================================================
+    // PROCESS EACH PENDING DATE
+    // =========================================================
 
     for (const date of sortedDates) {
 
@@ -464,10 +685,10 @@ async function processDailyROI() {
 
     return {
         success: true,
-        today
+        today,
+        processedDates: sortedDates
     };
 }
-
 module.exports = {
     processDailyROI,
     processROIDate,

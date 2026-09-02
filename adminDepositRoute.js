@@ -8,7 +8,9 @@ const {
     isAllowedPackage,
     getDailyROI,
     getMaxCap,
-    DIRECT_BONUS_RATE
+    DIRECT_BONUS_RATE,
+    getUserRemainingEarningCap,
+    limitToUserEarningCap
 } = require("./packageConfig");
 
 function getIndiaDate() {
@@ -270,7 +272,12 @@ async function approveDeposit(req, res) {
                 bonusSponsor &&
                 sponsorHasActivePackage
             ) {
-                directBonus =
+                // =====================================================
+                // DIRECT BONUS — COMBINED 3X EARNING CAP
+                // ROI + DIRECT BONUS + TEAM ROI
+                // =====================================================
+
+                const requestedDirectBonus =
                     Number(
                         (
                             amount *
@@ -278,8 +285,20 @@ async function approveDeposit(req, res) {
                         ).toFixed(2)
                     );
 
-                if (directBonus > 0) {
+                const remainingSponsorCap =
+                    getUserRemainingEarningCap(
+                        bonusSponsor
+                    );
 
+                directBonus =
+                    Number(
+                        Math.min(
+                            requestedDirectBonus,
+                            remainingSponsorCap
+                        ).toFixed(2)
+                    );
+
+                if (directBonus > 0) {
                     bonusSponsor.walletBal =
                         Number(
                             bonusSponsor.walletBal || 0
@@ -289,11 +308,11 @@ async function approveDeposit(req, res) {
                         Number(
                             bonusSponsor.totalEarned || 0
                         ) + directBonus;
-                      bonusSponsor.directEarned =
-                          Number(
-                              bonusSponsor.directEarned || 0
-                          ) + directBonus;
 
+                    bonusSponsor.directEarned =
+                        Number(
+                            bonusSponsor.directEarned || 0
+                        ) + directBonus;
                     if (
                         !Array.isArray(
                             bonusSponsor.commissionHistory

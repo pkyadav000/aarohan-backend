@@ -5,7 +5,12 @@ async function updateUserStatus(req, res) {
         const { userId } = req.params;
         const { action } = req.body;
 
-        if (!userId) {
+        const cleanUserId =
+            String(userId || "")
+                .trim()
+                .toUpperCase();
+
+        if (!cleanUserId) {
             return res.status(400).json({
                 success: false,
                 message: "User ID is required."
@@ -23,7 +28,12 @@ async function updateUserStatus(req, res) {
             });
         }
 
-        if (userId === req.auth.userId) {
+        if (
+            cleanUserId ===
+            String(req.auth.userId || "")
+                .trim()
+                .toUpperCase()
+        ) {
             return res.status(400).json({
                 success: false,
                 message:
@@ -32,7 +42,9 @@ async function updateUserStatus(req, res) {
         }
 
         const user =
-            await User.findOne({ userId });
+            await User.findOne({
+                userId: cleanUserId
+            });
 
         if (!user) {
             return res.status(404).json({
@@ -49,30 +61,91 @@ async function updateUserStatus(req, res) {
             });
         }
 
-
+        // =====================================================
+        // BLOCK USER
+        // =====================================================
         if (action === "BLOCK") {
+
+            if (user.status === "SUSPENDED") {
+                return res.status(409).json({
+                    success: false,
+                    message: "User is already suspended."
+                });
+            }
+
+            // Only ACTIVE / PACKAGE NOT ACTIVE are valid
+            // pre-suspension states.
+            if (
+                user.status !== "ACTIVE" &&
+                user.status !== "PACKAGE NOT ACTIVE"
+            ) {
+                return res.status(400).json({
+                    success: false,
+                    message:
+                        "User has an invalid account status."
+                });
+            }
+
+            user.statusBeforeSuspend =
+                user.status;
+
             user.status = "SUSPENDED";
-        } else if (
-            user.status === "SUSPENDED"
-        ) {
-            user.status = "PACKAGE NOT ACTIVE";
+
+            await user.save();
+
+            return res.json({
+                success: true,
+                message:
+                    "User blocked successfully.",
+                user: {
+                    userId: user.userId,
+                    name: user.name,
+                    status: user.status,
+                    statusBeforeSuspend:
+                        user.statusBeforeSuspend
+                }
+            });
         }
 
-        await user.save();
+        // =====================================================
+        // UNBLOCK USER
+        // =====================================================
+        if (action === "UNBLOCK") {
 
-        return res.json({
-            success: true,
-            message:
-                action === "BLOCK"
-                    ? "User blocked successfully."
-                    : "User unblocked successfully.",
-user: {
-    userId: user.userId,
-    name: user.name,
-    status: user.status
-}
+            if (user.status !== "SUSPENDED") {
+                return res.status(409).json({
+                    success: false,
+                    message:
+                        "Only suspended users can be unblocked."
+                });
+            }
 
-        });
+            const previousStatus =
+                user.statusBeforeSuspend === "ACTIVE" ||
+                user.statusBeforeSuspend ===
+                    "PACKAGE NOT ACTIVE"
+                    ? user.statusBeforeSuspend
+                    : "PACKAGE NOT ACTIVE";
+
+            user.status = previousStatus;
+
+            user.statusBeforeSuspend = null;
+
+            await user.save();
+
+            return res.json({
+                success: true,
+                message:
+                    "User unblocked successfully.",
+                user: {
+                    userId: user.userId,
+                    name: user.name,
+                    status: user.status,
+                    statusBeforeSuspend:
+                        user.statusBeforeSuspend
+                }
+            });
+        }
 
     } catch (error) {
         console.error(

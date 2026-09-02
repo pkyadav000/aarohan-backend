@@ -6,6 +6,9 @@ async function createDeposit(req, res) {
     try {
         const { amount, paymentReference = "" } = req.body;
 
+        const cleanPaymentReference =
+            String(paymentReference || "").trim();
+
         const numericAmount = Number(amount);
 
         if (!Number.isFinite(numericAmount) || numericAmount <= 0) {
@@ -65,12 +68,27 @@ async function createDeposit(req, res) {
 
         const depositId = "DEP" + nextNumber;
 
+        if (cleanPaymentReference) {
+            const existingReference =
+                await Deposit.findOne({
+                    paymentReference: cleanPaymentReference
+                }).select("depositId status");
+
+            if (existingReference) {
+                return res.status(409).json({
+                    success: false,
+                    message:
+                        "This payment reference has already been used."
+                });
+            }
+        }
+
         const deposit = await Deposit.create({
             depositId,
             userId: user.userId,
             amount: numericAmount,
             paymentReference:
-                String(paymentReference).trim(),
+                cleanPaymentReference,
             status: "PENDING"
         });
 

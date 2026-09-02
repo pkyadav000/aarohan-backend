@@ -28,7 +28,18 @@ const packageSchema = new mongoose.Schema(
         totalEarned: {
             type: Number,
             default: 0,
-            min: 0
+            min: 0,
+            set: function(value) {
+                const amount = Number(value);
+
+                if (!Number.isFinite(amount)) {
+                    return 0;
+                }
+
+                return Math.round(
+                    (amount + Number.EPSILON) * 100
+                ) / 100;
+            }
         },
 
         maxCap: {
@@ -166,25 +177,86 @@ roiDaily: {
         walletBal: {
             type: Number,
             default: 0,
-            min: 0
+            min: 0,
+            set: function(value) {
+                const amount = Number(value);
+
+                if (!Number.isFinite(amount)) {
+                    return 0;
+                }
+
+                return Math.round(
+                    (amount + Number.EPSILON) * 100
+                ) / 100;
+            }
         },
 
         totalEarned: {
             type: Number,
             default: 0,
-            min: 0
+            min: 0,
+            set: function(value) {
+                const amount = Number(value);
+
+                if (!Number.isFinite(amount)) {
+                    return 0;
+                }
+
+                return Math.round(
+                    (amount + Number.EPSILON) * 100
+                ) / 100;
+            }
         },
 
         roiEarned: {
             type: Number,
             default: 0,
-            min: 0
+            min: 0,
+            set: function(value) {
+                const amount = Number(value);
+
+                if (!Number.isFinite(amount)) {
+                    return 0;
+                }
+
+                return Math.round(
+                    (amount + Number.EPSILON) * 100
+                ) / 100;
+            }
         },
 
         teamEarned: {
             type: Number,
             default: 0,
-            min: 0
+            min: 0,
+            set: function(value) {
+                const amount = Number(value);
+
+                if (!Number.isFinite(amount)) {
+                    return 0;
+                }
+
+                return Math.round(
+                    (amount + Number.EPSILON) * 100
+                ) / 100;
+            }
+        },
+
+        directEarned: {
+            type: Number,
+            default: 0,
+            min: 0,
+            set: function(value) {
+                const amount = Number(value);
+
+                if (!Number.isFinite(amount)) {
+                    return 0;
+                }
+
+                return Math.round(
+                    (amount + Number.EPSILON) * 100
+                ) / 100;
+            }
         },
 
         referrals: {
@@ -213,6 +285,33 @@ roiDaily: {
         timestamps: true
     }
 );
+
+
+// =========================================================
+// USER STATUS / PACKAGE CONSISTENCY SAFEGUARD
+// =========================================================
+// SUSPENDED users are never automatically changed.
+// ACTIVE package => ACTIVE user.
+// No ACTIVE package => PACKAGE NOT ACTIVE.
+// =========================================================
+
+userSchema.pre("save", function (next) {
+    if (this.status === "SUSPENDED") {
+        return next();
+    }
+
+    const hasActivePackage =
+        Array.isArray(this.packages) &&
+        this.packages.some(
+            pkg => pkg && pkg.status === "ACTIVE"
+        );
+
+    this.status = hasActivePackage
+        ? "ACTIVE"
+        : "PACKAGE NOT ACTIVE";
+
+    next();
+});
 
 module.exports =
     mongoose.model("User", userSchema);

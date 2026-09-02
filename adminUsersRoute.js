@@ -27,7 +27,7 @@ async function getAdminUsers(req, res) {
                 .trim()
                 .toUpperCase();
 
-        const query = {};
+        const query = { userId: { $ne: "AG1001" } };
 
         if (search) {
             const escaped =
@@ -59,7 +59,7 @@ if (status === "BLOCKED") {
             await Promise.all([
                 User.find(query)
                     .select(
-    "userId name email mobile role status package walletBal totalEarned roiEarned teamEarned referrals sponsorId createdAt"
+    "userId name email mobile role status package walletBal totalEarned roiEarned teamEarned directEarned referrals sponsorId createdAt"
                     )
                     .sort({
                         createdAt: -1

@@ -37,6 +37,7 @@ async function getMe(req, res) {
                 totalEarned: user.totalEarned,
                 roiEarned: user.roiEarned,
                 teamEarned: user.teamEarned,
+                  directEarned: user.directEarned,
                 referrals: user.referrals
             }
         });

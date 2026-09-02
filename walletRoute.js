@@ -6,7 +6,7 @@ async function getWallet(req, res) {
 
         const user = await User.findOne({ userId })
             .select(
-                "userId walletBal totalEarned roiEarned teamEarned package status"
+                "userId walletBal totalEarned roiEarned teamEarned directEarned package status"
             )
             .lean();
 
@@ -25,6 +25,7 @@ async function getWallet(req, res) {
                 totalEarned: Number(user.totalEarned || 0),
                 roiEarned: Number(user.roiEarned || 0),
                 teamEarned: Number(user.teamEarned || 0),
+                  directEarned: Number(user.directEarned || 0),
                 package: Number(user.package || 0),
                 status: user.status
             }

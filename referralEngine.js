@@ -1,66 +1,151 @@
 const mongoose = require("mongoose");
+const User = require("./models/User");
+const Transaction = require("./models/Transaction");
+const { COMMISSION_RATES } = require("./packageConfig");
 
-const LEVEL_COMMISSION = {
-  1: 0.10,
-  2: 0.05,
-  3: 0.02
-};
+async function processTeamCommission(
+    fromUserId,
+    baseAmount,
+    dateStr,
+    session = null
+) {
+    const queryOptions = session ? { session } : {};
 
-async function processTeamCommission(fromUserId, baseAmount, dateStr) {
-  try {
-    const User = mongoose.model("User");
-    const Transaction = mongoose.model("Transaction");
+    try {
+        const currentUser = await User.findOne({
+            userId: fromUserId,
+            role: "USER"
+        }).session(session || null);
 
-    let currentUser = await User.findOne({ userId: fromUserId });
-    if (!currentUser || !currentUser.referredBy) return;
-
-    let currentUplineId = currentUser.referredBy;
-
-    for (let level = 1; level <= 3; level++) {
-      if (!currentUplineId) break;
-
-      const uplineUser = await User.findOne({ userId: currentUplineId });
-      if (!uplineUser) break;
-
-      const commissionRate = LEVEL_COMMISSION[level] || 0;
-      const commissionAmount = baseAmount * commissionRate;
-
-      if (commissionAmount > 0) {
-        const txId = `TEAM_${dateStr}_L${level}_${fromUserId}_${uplineUser.userId}`;
-
-        const existingTx = await Transaction.findOne({ transactionId: txId });
-        if (!existingTx) {
-          await Transaction.create({
-            transactionId: txId,
-            userId: uplineUser.userId,
-            fromUser: fromUserId,
-            type: "TEAM_ROI",
-            amount: commissionAmount,
-            status: "CREDITED",
-            level: level,
-            reference: dateStr,
-            date: dateStr
-          });
-
-          // Upline Balance Increment (Atomic Update)
-          await User.updateOne(
-            { userId: uplineUser.userId },
-            { 
-              $inc: { 
-                walletBalance: commissionAmount, 
-                totalTeamIncome: commissionAmount 
-              } 
-            }
-          );
-          console.log(`[TEAM ROI] Level ${level}: ${commissionAmount} credited to ${uplineUser.userId}`);
+        if (!currentUser) {
+            return;
         }
-      }
 
-      currentUplineId = uplineUser.referredBy;
+        let sponsorId = String(
+            currentUser.sponsorId || ""
+        )
+            .trim()
+            .toUpperCase();
+
+        for (let level = 1; level <= 3; level++) {
+
+            if (!sponsorId) {
+                break;
+            }
+
+            // Master Admin ko Team ROI nahi dena.
+            if (sponsorId === "AG1001") {
+                break;
+            }
+
+            const sponsor = await User.findOne({
+                userId: sponsorId,
+                role: "USER",
+                status: "ACTIVE"
+            }).session(session || null);
+
+            if (!sponsor) {
+                break;
+            }
+
+            const rate = Number(
+                COMMISSION_RATES[level] || 0
+            );
+
+            const requested =
+                Number(baseAmount || 0) * rate;
+
+            if (!Number.isFinite(requested) || requested <= 0) {
+                break;
+            }
+
+            const sponsorCap =
+                Array.isArray(sponsor.packages)
+                    ? sponsor.packages.reduce(
+                        (total, pkg) =>
+                            total +
+                            Number(
+                                pkg.maxCap ||
+                                Number(pkg.amount || 0) * 3
+                            ),
+                        0
+                    )
+                    : 0;
+
+            const sponsorEarned =
+                Number(sponsor.totalEarned || 0);
+
+            const remaining = Math.max(
+                0,
+                sponsorCap - sponsorEarned
+            );
+
+            const commission = Math.min(
+                requested,
+                remaining
+            );
+
+            const transactionId =
+                `TEAM_${dateStr}_L${level}_${fromUserId}_${sponsor.userId}`;
+
+            const existingTransaction =
+                await Transaction.findOne({
+                    transactionId
+                }).session(session || null);
+
+            if (!existingTransaction && commission > 0) {
+
+                sponsor.walletBal =
+                    Number(sponsor.walletBal || 0) +
+                    commission;
+
+                sponsor.totalEarned =
+                    Number(sponsor.totalEarned || 0) +
+                    commission;
+
+                sponsor.teamEarned =
+                    Number(sponsor.teamEarned || 0) +
+                    commission;
+
+                await Transaction.create(
+                    [{
+                        transactionId,
+                        userId: sponsor.userId,
+                        type: "TEAM_ROI",
+                        amount: commission,
+                        status: "CREDITED",
+                        reference: dateStr,
+                        fromUser: fromUserId,
+                        level,
+                        date: dateStr
+                    }],
+                    queryOptions
+                );
+
+                await sponsor.save(queryOptions);
+
+                console.log(
+                    `[TEAM ROI] L${level} | ${fromUserId} -> ${sponsor.userId} | ₹${commission}`
+                );
+            }
+
+            sponsorId = String(
+                sponsor.sponsorId || ""
+            )
+                .trim()
+                .toUpperCase();
+        }
+
+    } catch (error) {
+        console.error(
+            "TEAM COMMISSION ERROR:",
+            error
+        );
+
+        throw error;
     }
-  } catch (err) {
-    console.error("Referral Processing Error:", err);
-  }
 }
 
-module.exports = { processTeamCommission };
+module.exports = {
+    processTeamCommission
+};
