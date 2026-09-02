@@ -11,8 +11,7 @@ const withdrawalSchema = new mongoose.Schema(
 
         userId: {
             type: String,
-            required: true,
-            index: true
+            required: true
         },
 
         amount: {
@@ -65,6 +64,16 @@ const withdrawalSchema = new mongoose.Schema(
     },
     {
         timestamps: true
+    }
+);
+
+withdrawalSchema.index(
+    { userId: 1 },
+    {
+        unique: true,
+        partialFilterExpression: {
+            status: "PENDING"
+        }
     }
 );
 

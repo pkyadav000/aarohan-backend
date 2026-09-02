@@ -56,28 +56,12 @@ async function loginUser(req, res) {
                 .select("+password");
 
         if (!user) {
-            console.error("LOGIN DEBUG: USER NOT FOUND", {
-                identifier: cleanIdentifier,
-                lookupType: isEmail ? "email" : "mobile"
-            });
-
-            return res.status(401).json({
+                return res.status(401).json({
                 success: false,
                 message:
                     "Invalid login credentials."
             });
         }
-
-        console.error("LOGIN DEBUG: USER FOUND", {
-            userId: user.userId,
-            role: user.role,
-            passwordHashExists:
-                typeof user.password === "string",
-            passwordHashLength:
-                typeof user.password === "string"
-                    ? user.password.length
-                    : 0
-        });
 
         if (user.status === "SUSPENDED") {
             return res.status(403).json({
@@ -105,22 +89,12 @@ async function loginUser(req, res) {
             );
 
         if (!passwordValid) {
-            console.error("LOGIN DEBUG: PASSWORD MISMATCH", {
-                userId: user.userId,
-                role: user.role
-            });
-
             return res.status(401).json({
                 success: false,
                 message:
                     "Invalid login credentials."
             });
         }
-
-        console.error("LOGIN DEBUG: PASSWORD MATCHED", {
-            userId: user.userId,
-            role: user.role
-        });
 
         const jwtSecret =
             process.env.JWT_SECRET;

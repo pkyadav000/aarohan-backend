@@ -2,3 +2,15 @@ node_modules/
 .env
 .env.*
 npm-debug.log*
+
+# Local backup / audit / repair files
+*.backup
+*.bak
+*.backup-*
+*.before-*
+audit*.js
+checkAG*.js
+inspectAG*.js
+repair*.js
+
+*.backup[0-9]*

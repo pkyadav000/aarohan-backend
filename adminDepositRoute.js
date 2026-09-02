@@ -31,11 +31,6 @@ async function approveDeposit(req, res) {
     try {
         const { depositId } = req.params;
 
-        console.error("APPROVE ROUTE HIT:", {
-            depositId,
-            auth: req.auth
-        });
-
         if (!depositId) {
             return res.status(400).json({
                 success: false,
@@ -69,16 +64,6 @@ async function approveDeposit(req, res) {
         }
 
         const amount = Number(deposit.amount);
-
-        console.error("APPROVAL PACKAGE DEBUG:", {
-            depositId,
-            rawAmount: deposit.amount,
-            rawAmountType: typeof deposit.amount,
-            amount,
-            amountType: typeof amount,
-            allowed: isAllowedPackage(amount),
-            status: deposit.status
-        });
 
         if (!isAllowedPackage(amount)) {
             await session.abortTransaction();
