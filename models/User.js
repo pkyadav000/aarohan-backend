@@ -295,9 +295,9 @@ roiDaily: {
 // No ACTIVE package => PACKAGE NOT ACTIVE.
 // =========================================================
 
-userSchema.pre("save", function (next) {
+userSchema.pre("save", function () {
     if (this.status === "SUSPENDED") {
-        return next();
+        return;
     }
 
     const hasActivePackage =
@@ -309,8 +309,6 @@ userSchema.pre("save", function (next) {
     this.status = hasActivePackage
         ? "ACTIVE"
         : "PACKAGE NOT ACTIVE";
-
-    next();
 });
 
 module.exports =
