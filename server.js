@@ -58,7 +58,8 @@ app.use(
 // Allow only known frontend origins
 const allowedOrigins = new Set([
   "https://aarohan-frontend-mocha.vercel.app",
-  "https://aarohan-global.vercel.app"
+  "https://aarohan-global.vercel.app",
+    "https://www.aarohanglobal.in"
 ]);
 
 app.use(
