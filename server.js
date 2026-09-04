@@ -31,6 +31,10 @@ const getAdminDeposits = require("./adminDepositsRoute");
 const getAdminWithdrawals = require("./adminWithdrawalsRoute");
 const getUserTransactions = require("./userTransactionsRoute");
 const getWallet = require("./walletRoute");
+const {
+  getAdminWhatsApp,
+  updateAdminWhatsApp
+} = require("./adminWhatsAppRoute");
 const { processDailyROI } = require("./roiEngine");
 const { startROIScheduler } = require("./roiScheduler");
 
@@ -142,6 +146,10 @@ app.get("/api/admin/deposits", authenticate, requireAdmin, getAdminDeposits);
 app.get("/api/admin/withdrawals", authenticate, requireAdmin, getAdminWithdrawals);
 app.get("/api/transactions", authenticate, getUserTransactions);
 app.get("/api/wallet", authenticate, getWallet);
+
+// ADMIN WHATSAPP
+app.get("/api/admin/whatsapp", authenticate, getAdminWhatsApp);
+app.patch("/api/admin/whatsapp", authenticate, requireAdmin, updateAdminWhatsApp);
 
 
 
